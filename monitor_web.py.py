@@ -8,7 +8,7 @@ from flask import Flask, render_template, jsonify
 import requests
 import schedule
 
-# Load settings from environment (Render will inject)
+# Load settings from environment
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))  # seconds
 PING_COUNT = int(os.getenv("PING_COUNT", 3))
@@ -18,10 +18,10 @@ AUTO_REFRESH = int(os.getenv("AUTO_REFRESH", 30))
 
 PING_PARAM = "-n" if platform.system().lower() == "windows" else "-c"
 
-# Track state
-status_data = {}     # {ip: {"hostname":..., "is_up":..., "last_change":...}}
-down_since = {}      # {ip: timestamp when first down}
-alert_sent = {}      # {ip: bool}
+# Track host states
+status_data = {}
+down_since = {}
+alert_sent = {}
 
 app = Flask(__name__)
 
@@ -53,21 +53,13 @@ def send_webhook(message):
 
 def daily_summary(targets):
     down_hosts = []
-    up_hosts = []
     for hostname, ip in targets:
         st = status_data.get(ip, {})
-        if st.get("is_up", True):
-            up_hosts.append(f"✅ {hostname} ({ip})")
-        else:
+        if not st.get("is_up", True):
             down_hosts.append(f"❌ {hostname} ({ip})")
-    lines = []
     if down_hosts:
-        lines.append("⚠️ **Daily Summary — Hosts DOWN:**")
-        lines.extend([f"- {h}" for h in down_hosts])
-    if up_hosts:
-        lines.append("\n✅ Hosts UP:")
-        lines.extend([f"- {h}" for h in up_hosts])
-    send_webhook("📊 Daily Network Check:\n" + "\n".join(lines))
+        message = "⚠️ **Daily Summary — Hosts DOWN:**\n" + "\n".join(down_hosts)
+        send_webhook(message)
 
 def monitor():
     # Load targets from ips.txt
@@ -78,7 +70,7 @@ def monitor():
                 h, ip = line.strip().split(",", 1)
                 targets.append((h.strip(), ip.strip()))
 
-    # Init state
+    # Initialize state
     for h, ip in targets:
         status_data[ip] = {"hostname": h, "is_up": True, "last_change": "Never"}
         alert_sent[ip] = False
@@ -91,6 +83,7 @@ def monitor():
         for h, ip in targets:
             is_up = ping_host(ip)
             prev = status_data[ip]["is_up"]
+
             if is_up:
                 status_data[ip].update(is_up=True, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
                 down_since.pop(ip, None)
@@ -105,10 +98,11 @@ def monitor():
                     status_data[ip].update(is_up=False, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
                     alert_sent[ip] = True
             status_data[ip]["is_up"] = is_up
+
         schedule.run_pending()
         time.sleep(CHECK_INTERVAL)
 
-# Start background thread
+# Start background monitor thread
 threading.Thread(target=monitor, daemon=True).start()
 
 # Flask routes
@@ -125,4 +119,4 @@ def status_json():
     return jsonify(status_data)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
