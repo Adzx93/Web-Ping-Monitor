@@ -19,9 +19,9 @@ AUTO_REFRESH = int(os.getenv("AUTO_REFRESH", 30))
 PING_PARAM = "-n" if platform.system().lower() == "windows" else "-c"
 
 # Track host states
-status_data = {}
-down_since = {}
-alert_sent = {}
+status_data = {}   # {ip: {hostname, is_up, last_change}}
+down_since = {}    # {ip: timestamp when first seen down}
+alert_sent = {}    # {ip: bool}
 
 app = Flask(__name__)
 
@@ -90,14 +90,16 @@ def monitor():
                 if prev is False and alert_sent[ip]:
                     send_webhook(f"✅ **RECOVERY:** {h} ({ip}) is back UP")
                     alert_sent[ip] = False
+
             else:
                 if ip not in down_since:
                     down_since[ip] = now
-                if prev and (now - down_since[ip] >= GRACE_PERIOD) and not alert_sent[ip]:
-                    send_webhook(f"🚨 **ALERT:** {h} ({ip}) has been DOWN for {GRACE_PERIOD//60}+ minutes")
+                # Only mark as DOWN after grace period
+                if now - down_since[ip] >= GRACE_PERIOD:
+                    if not alert_sent[ip]:
+                        send_webhook(f"🚨 **ALERT:** {h} ({ip}) has been DOWN for {GRACE_PERIOD//60}+ minutes")
+                        alert_sent[ip] = True
                     status_data[ip].update(is_up=False, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-                    alert_sent[ip] = True
-            status_data[ip]["is_up"] = is_up
 
         schedule.run_pending()
         time.sleep(CHECK_INTERVAL)
