@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Ping Monitor Dashboard</title>
+  <meta http-equiv="refresh" content="{{ auto_refresh }}">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: #333; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f4f4f4; }
+    .up { color: green; font-weight: bold; }
+    .down { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>📊 Ping Monitor Dashboard</h1>
+  <p>Last updated: {{ last_updated }}</p>
+  <table>
+    <tr>
+      <th>Hostname</th>
+      <th>IP</th>
+      <th>Status</th>
+      <th>Last Change</th>
+    </tr>
+    {% for row in status %}
+    <tr>
+      <td>{{ row.hostname }}</td>
+      <td>{{ row.ip }}</td>
+      <td class="{{ 'up' if row.is_up else 'down' }}">
+        {{ "✅ UP" if row.is_up else "❌ DOWN" }}
+      </td>
+      <td>{{ row.last_change }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
