@@ -1,56 +1,215 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Ping Monitor Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <meta http-equiv="refresh" content="{{ auto_refresh }}">
-    <style>
-        body { font-family: Arial; margin: 20px; background: #f8f9fa; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { padding: 10px; border-bottom: 1px solid #ddd; }
-        .up { color: green; font-weight: bold; }
-        .down { color: red; font-weight: bold; }
-        canvas { width: 100%; height: 100px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ping Monitor Dashboard</title>
+  <style>
+    :root {
+      --bg-color: #121212;
+      --text-color: #e0e0e0;
+      --card-bg: #1e1e1e;
+      --up-color: #4caf50;
+      --down-color: #f44336;
+      --border-color: #333;
+      --accent-color: #2196f3;
+    }
+
+    body.light {
+      --bg-color: #f4f4f4;
+      --text-color: #1e1e1e;
+      --card-bg: #ffffff;
+      --border-color: #ccc;
+    }
+
+    body {
+      font-family: "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 20px;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .summary-container {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+
+    .summary-card {
+      background: var(--card-bg);
+      padding: 15px 25px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-color);
+      text-align: center;
+      min-width: 150px;
+    }
+
+    .summary-card h2 {
+      margin: 0;
+      font-size: 2rem;
+    }
+
+    .summary-card p {
+      margin: 5px 0 0 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+
+    .up-card h2 {
+      color: var(--up-color);
+    }
+
+    .down-card h2 {
+      color: var(--down-color);
+    }
+
+    .toggle-container {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    button.toggle-theme {
+      background-color: var(--accent-color);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: var(--card-bg);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    th, td {
+      padding: 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background: var(--accent-color);
+      color: white;
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-up {
+      color: var(--up-color);
+      font-weight: bold;
+    }
+
+    .status-down {
+      color: var(--down-color);
+      font-weight: bold;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 13px;
+      opacity: 0.8;
+    }
+
+    @media (max-width: 600px) {
+      th, td {
+        padding: 8px;
+        font-size: 14px;
+      }
+    }
+  </style>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle("light");
+      localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+    }
+
+    function loadTheme() {
+      const saved = localStorage.getItem("theme");
+      if (saved === "light") {
+        document.body.classList.add("light");
+      }
+    }
+
+    function autoRefresh() {
+      setTimeout(() => location.reload(), {{ auto_refresh * 1000 }});
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadTheme();
+      autoRefresh();
+    });
+  </script>
 </head>
+
 <body>
-    <h2>Ping Monitor Dashboard</h2>
-    <p>Last updated: {{ last_updated }}</p>
-    <table>
-        <tr>
-            <th>Hostname</th><th>IP</th><th>Status</th><th>Latency (ms)</th><th>Uptime (1h %)</th><th>History</th>
-        </tr>
-        {% for row in status %}
-        <tr>
-            <td>{{ row.hostname }}</td>
-            <td>{{ row.ip }}</td>
-            <td class="{{ 'up' if row.is_up else 'down' }}">{{ 'UP' if row.is_up else 'DOWN' }}</td>
-            <td>{{ row.latency }}</td>
-            <td>{{ row.uptime }}</td>
-            <td><canvas id="chart_{{ loop.index }}"></canvas></td>
-        </tr>
-        <script>
-        fetch(`/history/{{ row.ip }}.json`)
-            .then(r => r.json())
-            .then(data => {
-                new Chart(document.getElementById('chart_{{ loop.index }}'), {
-                    type: 'line',
-                    data: {
-                        labels: data.map(d => d.timestamp.slice(11,19)),
-                        datasets: [{
-                            label: 'Latency (ms)',
-                            data: data.map(d => d.latency),
-                            borderColor: 'blue',
-                            tension: 0.3,
-                            pointRadius: 0
-                        }]
-                    },
-                    options: { scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
-                });
-            });
-        </script>
-        {% endfor %}
-    </table>
+  <h1>🌐 Network Ping Monitor</h1>
+
+  <div class="toggle-container">
+    <button class="toggle-theme" onclick="toggleTheme()">🌓 Toggle Dark/Light Mode</button>
+  </div>
+
+  <div class="summary-container">
+    <div class="summary-card total-card">
+      <h2>{{ status|length }}</h2>
+      <p>Total Hosts</p>
+    </div>
+    <div class="summary-card up-card">
+      <h2>{{ status|selectattr("is_up")|list|length }}</h2>
+      <p>Up</p>
+    </div>
+    <div class="summary-card down-card">
+      <h2>{{ status|rejectattr("is_up")|list|length }}</h2>
+      <p>Down</p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Hostname</th>
+        <th>IP Address</th>
+        <th>Status</th>
+        <th>Last Change</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in status|sort(attribute="is_up") %}
+      <tr>
+        <td>{{ row.hostname }}</td>
+        <td>{{ row.ip }}</td>
+        <td class="{{ 'status-up' if row.is_up else 'status-down' }}">
+          {{ "UP ✅" if row.is_up else "DOWN ❌" }}
+        </td>
+        <td>{{ row.last_change }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    Last updated: {{ last_updated }} — Auto-refresh every {{ auto_refresh }}s
+  </div>
 </body>
 </html>
