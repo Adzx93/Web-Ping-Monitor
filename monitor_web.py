@@ -6,24 +6,23 @@ import threading
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 import requests
+import socket
 
-# Load settings from environment
+# Environment settings
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PING_COUNT = int(os.getenv("PING_COUNT", 3))
-GRACE_PERIOD = int(os.getenv("GRACE_PERIOD", 300))     # seconds
-AUTO_REFRESH = int(os.getenv("AUTO_REFRESH", 30))      # seconds
+TCP_PORTS = os.getenv("TCP_PORTS", "")  # Comma-separated, e.g., "80,443"
+AUTO_REFRESH = int(os.getenv("AUTO_REFRESH", 5))  # seconds
 
+PING_COUNT = 1
 PING_PARAM = "-n" if platform.system().lower() == "windows" else "-c"
 
 # Track host states
 status_data = {}
-down_since = {}
 alert_sent = {}
 
 app = Flask(__name__)
 
 def ping_host(ip):
-    """Return True if host is reachable via ping."""
     try:
         result = subprocess.run(
             ["ping", PING_PARAM, str(PING_COUNT), ip],
@@ -32,6 +31,13 @@ def ping_host(ip):
             text=True
         )
         return result.returncode == 0
+    except Exception:
+        return False
+
+def tcp_check(ip, port):
+    try:
+        with socket.create_connection((ip, port), timeout=3):
+            return True
     except Exception:
         return False
 
@@ -50,7 +56,6 @@ def send_webhook(message):
         print(f"[ERROR] {e}")
 
 def monitor():
-    """Constantly monitor all hosts."""
     # Load targets from ips.txt
     with open("ips.txt") as f:
         targets = []
@@ -61,60 +66,50 @@ def monitor():
 
     # Initialize state
     for h, ip in targets:
-        status_data[ip] = {"hostname": h, "ip": ip, "is_up": True, "last_change": "Never"}
+        status_data[ip] = {"hostname": h, "is_up": True, "last_change": "Never", "tcp_ok": True}
         alert_sent[ip] = False
 
+    tcp_ports = [int(p.strip()) for p in TCP_PORTS.split(",") if p.strip()]
+
     while True:
-        now = time.time()
         for h, ip in targets:
-            is_up = ping_host(ip)
+            ping_ok = ping_host(ip)
+            tcp_ok = all(tcp_check(ip, port) for port in tcp_ports) if tcp_ports else True
+            is_up = ping_ok and tcp_ok
             prev = status_data[ip]["is_up"]
 
-            if is_up:
-                status_data[ip].update(is_up=True, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-                down_since.pop(ip, None)
-                if prev is False and alert_sent[ip]:
-                    send_webhook(f"✅ **RECOVERY:** {h} ({ip}) is back UP")
-                    alert_sent[ip] = False
-            else:
-                if ip not in down_since:
-                    down_since[ip] = now
-                if prev and (now - down_since[ip] >= GRACE_PERIOD) and not alert_sent[ip]:
-                    send_webhook(f"🚨 **ALERT:** {h} ({ip}) has been DOWN for {GRACE_PERIOD//60}+ minutes")
-                    status_data[ip].update(is_up=False, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-                    alert_sent[ip] = True
-            status_data[ip]["is_up"] = is_up
+            # Update status
+            status_data[ip].update(is_up=is_up, last_change=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), tcp_ok=tcp_ok)
 
-        time.sleep(1)  # constantly check
+            # Send alerts if status changed
+            if is_up and prev is False and alert_sent[ip]:
+                send_webhook(f"✅ **RECOVERY:** {h} ({ip}) is back UP")
+                alert_sent[ip] = False
+            elif not is_up and prev is True:
+                send_webhook(f"🚨 **ALERT:** {h} ({ip}) is DOWN")
+                alert_sent[ip] = True
 
-# Start monitoring in a background thread
+        time.sleep(1)  # tiny delay to prevent CPU overuse
+
+# Start monitoring in background thread
 threading.Thread(target=monitor, daemon=True).start()
 
+# Flask routes
 @app.route("/")
 def index():
-    """Render the dashboard."""
-    rows = list(status_data.values())
-    # DOWN hosts first
-    rows.sort(key=lambda x: x["is_up"])
-    dark_mode = request.args.get("dark") == "1"
-    return render_template(
-        "index.html",
-        status=rows,
-        last_updated=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-        auto_refresh=AUTO_REFRESH,
-        dark_mode=dark_mode
+    # Sort DOWN hosts to the top
+    rows = sorted(
+        [
+            {"hostname": v["hostname"], "ip": ip, "is_up": v["is_up"], "last_change": v["last_change"], "tcp_ok": v.get("tcp_ok", True)}
+            for ip, v in status_data.items()
+        ],
+        key=lambda x: x["is_up"]
     )
+    return render_template("index.html", status=rows, last_updated=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), auto_refresh=AUTO_REFRESH)
 
 @app.route("/status.json")
 def status_json():
-    """API endpoint for host status."""
-    rows = list(status_data.values())
-    rows.sort(key=lambda x: x["is_up"])
-    return jsonify({
-        "status": rows,
-        "last_updated": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "auto_refresh": AUTO_REFRESH
-    })
+    return jsonify(status_data)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

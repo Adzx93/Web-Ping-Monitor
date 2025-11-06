@@ -6,98 +6,75 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: {% if dark_mode %}#121212{% else %}#f4f4f4{% endif %};
-            color: {% if dark_mode %}#f0f0f0{% else %}#333{% endif %};
-            margin: 0;
-            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+            transition: background-color 0.3s, color 0.3s;
         }
-
-        h1 {
-            text-align: center;
+        body.dark-mode {
+            background-color: #1e1e1e;
+            color: #ddd;
         }
-
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
         }
-
         th, td {
-            padding: 10px;
-            border: 1px solid {% if dark_mode %}#444{% else %}#ccc{% endif %};
+            padding: 12px;
             text-align: left;
+            border-bottom: 1px solid #ccc;
         }
-
-        th {
-            background-color: {% if dark_mode %}#1f1f1f{% else %}#ddd{% endif %};
-        }
-
         tr.down {
-            background-color: {% if dark_mode %}#8b0000{% else %}#ffcccc{% endif %};
+            background-color: #ffcccc;
         }
-
-        tr.up {
-            background-color: {% if dark_mode %}#006400{% else %}#ccffcc{% endif %};
+        body.dark-mode tr.down {
+            background-color: #b22222;
         }
-
-        .footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 0.9em;
-            color: {% if dark_mode %}#aaa{% else %}#555{% endif %};
-        }
-
-        .toggle {
-            display: block;
-            text-align: center;
+        .toggle-container {
             margin-top: 10px;
         }
-
-        .toggle a {
-            text-decoration: none;
-            color: {% if dark_mode %}#0af{% else %}#00f{% endif %};
-        }
     </style>
-
-    <script>
-        // Auto-refresh
-        setTimeout(() => location.reload(), {{ auto_refresh * 1000 }});
-    </script>
 </head>
 <body>
     <h1>Ping Monitor Dashboard</h1>
-
+    <div class="toggle-container">
+        <label>
+            <input type="checkbox" id="darkModeToggle"> Dark Mode
+        </label>
+    </div>
+    <p>Last updated: {{ last_updated }}</p>
     <table>
         <thead>
             <tr>
                 <th>Hostname</th>
-                <th>IP Address</th>
+                <th>IP</th>
                 <th>Status</th>
+                <th>TCP Check</th>
                 <th>Last Change</th>
             </tr>
         </thead>
         <tbody>
-            {% for host in status %}
-            <tr class="{{ 'up' if host.is_up else 'down' }}">
-                <td>{{ host.hostname }}</td>
-                <td>{{ host.ip }}</td>
-                <td>{{ 'UP ✅' if host.is_up else 'DOWN ❌' }}</td>
-                <td>{{ host.last_change }}</td>
+            {% for row in status %}
+            <tr class="{{ 'down' if not row.is_up else '' }}">
+                <td>{{ row.hostname }}</td>
+                <td>{{ row.ip }}</td>
+                <td>{{ 'UP' if row.is_up else 'DOWN' }}</td>
+                <td>{{ 'OK' if row.tcp_ok else 'FAIL' }}</td>
+                <td>{{ row.last_change }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    <div class="footer">
-        Last updated: {{ last_updated }}
-    </div>
+    <script>
+        // Auto-refresh
+        setTimeout(() => location.reload(), {{ auto_refresh * 1000 }});
 
-    <div class="toggle">
-        {% if dark_mode %}
-            <a href="/">Switch to Light Mode</a>
-        {% else %}
-            <a href="/?dark=1">Switch to Dark Mode</a>
-        {% endif %}
-    </div>
+        // Dark mode toggle
+        const toggle = document.getElementById('darkModeToggle');
+        toggle.addEventListener('change', () => {
+            document.body.classList.toggle('dark-mode', toggle.checked);
+        });
+    </script>
 </body>
 </html>
